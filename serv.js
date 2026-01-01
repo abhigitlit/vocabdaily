@@ -31,7 +31,7 @@ function initializeVocabulary() {
 initializeVocabulary();
 
 // --- API ENDPOINT ---
-app.get('/api/next-word', (req, res) => {
+app.get('/', (req, res) => {
     if (vocabulary.length === 0) {
         return res.status(500).json({ error: "No data found" });
     }
