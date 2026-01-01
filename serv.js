@@ -9,7 +9,7 @@ let availableIndices = [];
 
 function initializeVocabulary() {
     try {
-        const data = fs.readFileSync('./vocabulary.json', 'utf8');
+        const data = fs.readFileSync('./words_output.json', 'utf8');
         vocabulary = JSON.parse(data);
         
         // Create an array of indices [0, 1, 2, ... n]
