@@ -19,5 +19,6 @@
   "homepage": "https://github.com/abhigitlit/vocabdaily#readme",
   "dependencies": {
     "express": "^5.2.1"
-  }
+  },
+  "devDependencies": {}
 }

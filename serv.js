@@ -1,58 +1,59 @@
 const express = require('express');
 const fs = require('fs');
+const axios = require('axios');
 const app = express();
+
 const PORT = process.env.PORT || 3000;
+const GIST_ID = process.env.GIST_ID;
+const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
 
-// --- STATE MANAGEMENT ---
-let vocabulary = [];
-let availableIndices = [];
+// Local vocabulary data
+const vocabulary = JSON.parse(fs.readFileSync('./words_output.json', 'utf8'));
 
-function initializeVocabulary() {
-    try {
-        const data = fs.readFileSync('./words_output.json', 'utf8');
-        vocabulary = JSON.parse(data);
-        
-        // Create an array of indices [0, 1, 2, ... n]
-        availableIndices = [...Array(vocabulary.length).keys()];
-        
-        // Fisher-Yates Shuffle for true randomness
-        for (let i = availableIndices.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [availableIndices[i], availableIndices[j]] = [availableIndices[j], availableIndices[i]];
-        }
-        
-        console.log("Vocabulary loaded and shuffled.");
-    } catch (err) {
-        console.error("Error loading JSON:", err);
-    }
-}
+// --- GIST HELPERS ---
+const getSeenWords = async () => {
+    const response = await axios.get(`https://api.github.com/gists/${GIST_ID}`);
+    return JSON.parse(response.data.files['used_words.json'].content);
+};
 
-
-initializeVocabulary();
-
-// --- API ENDPOINT ---
-app.get('/', (req, res) => {
-    if (vocabulary.length === 0) {
-        return res.status(500).json({ error: "No data found" });
-    }
-
-    // If we've used all words, reshuffle and start over
-    if (availableIndices.length === 0) {
-        console.log("Cycle complete. Reshuffling...");
-        initializeVocabulary();
-    }
-
-    // Pop the last index from the shuffled list (unique every time)
-    const targetIndex = availableIndices.pop();
-    const word = vocabulary[targetIndex];
-
-    res.json({
-        remainingInCycle: availableIndices.length,
-        data: word
+const updateGist = async (list) => {
+    await axios.patch(`https://api.github.com/gists/${GIST_ID}`, {
+        files: { 'used_words.json': { content: JSON.stringify(list) } }
+    }, {
+        headers: { Authorization: `token ${GITHUB_TOKEN}` }
     });
+};
+
+app.get('/', async (req, res) => {
+    try {
+        // 1. Fetch persistent state from GitHub Gist
+        let seenTerms = await getSeenWords();
+
+        // 2. Filter local vocabulary
+        let available = vocabulary.filter(w => !seenTerms.includes(w.term));
+
+        // 3. Reset if all words used
+        if (available.length === 0) {
+            seenTerms = [];
+            available = vocabulary;
+        }
+
+        // 4. Pick random word
+        const word = available[Math.floor(Math.random() * available.length)];
+
+        // 5. Update state in Gist
+        seenTerms.push(word.term);
+        await updateGist(seenTerms);
+
+        res.json({
+            remaining_unique: available.length - 1,
+            data: word
+        });
+    } catch (err) {
+        res.status(500).json({ error: "Failed to fetch/update state", detail: err.message });
+    }
 });
 
-app.listen(PORT, () => {
-    console.log(`Server running at http://localhost:${PORT}`);
-    console.log(`Endpoint: http://localhost:${PORT}/api/next-word`);
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server running on port ${PORT}`);
 });
