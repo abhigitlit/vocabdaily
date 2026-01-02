@@ -28,7 +28,7 @@ const gistHeaders = {
 const getSeenWords = async () => {
     try {
         const response = await axios.get(`https://api.github.com/gists/${GIST_ID}`, { headers: gistHeaders });
-        const content = response.data.files['used_words.json'].content;
+        const content = response.data.files['used_vocab.json'].content;
         return JSON.parse(content);
     } catch (err) {
         console.error("Gist Fetch Error:", err.response ? err.response.data : err.message);
