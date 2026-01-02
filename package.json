@@ -18,7 +18,7 @@
   },
   "homepage": "https://github.com/abhigitlit/vocabdaily#readme",
   "dependencies": {
+    "axios": "^1.13.2",
     "express": "^5.2.1"
-  },
-  "devDependencies": {}
+  }
 }
