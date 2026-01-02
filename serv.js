@@ -39,7 +39,7 @@ const getSeenWords = async () => {
 const updateGist = async (list) => {
     try {
         await axios.patch(`https://api.github.com/gists/${GIST_ID}`, {
-            files: { 'used_words.json': { content: JSON.stringify(list) } }
+            files: { 'used_vocab.json': { content: JSON.stringify(list) } }
         }, { headers: gistHeaders });
     } catch (err) {
         console.error("Gist Update Error:", err.response ? err.response.data : err.message);
