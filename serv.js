@@ -7,90 +7,127 @@ const PORT = process.env.PORT || 3000;
 const GIST_ID = process.env.GIST_ID;
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
 
-// Local vocabulary data - Ensure this filename matches your JSON file exactly
+// Path to your vocabulary JSON file
 const DATA_PATH = './words_output.json';
 let vocabulary = [];
 
+// Load local vocabulary once at startup
 try {
-    vocabulary = JSON.parse(fs.readFileSync(DATA_PATH, 'utf8'));
-    console.log(`Loaded ${vocabulary.length} words from local JSON.`);
+    if (fs.existsSync(DATA_PATH)) {
+        vocabulary = JSON.parse(fs.readFileSync(DATA_PATH, 'utf8'));
+        console.log(`Successfully loaded ${vocabulary.length} words.`);
+    } else {
+        console.error(`Warning: ${DATA_PATH} not found.`);
+    }
 } catch (err) {
-    console.error("Error loading local JSON file:", err.message);
+    console.error("Critical error loading vocabulary file:", err.message);
 }
 
-// --- GIST HELPERS ---
-// GitHub API requires a User-Agent header and a Token
+// GitHub API Headers
 const gistHeaders = {
     'Authorization': `token ${GITHUB_TOKEN}`,
-    'User-Agent': 'Vocab-API-App' 
+    'User-Agent': 'Vocab-API-Service',
+    'Accept': 'application/vnd.github.v3+json'
 };
 
+/**
+ * Fetches the list of already seen terms from the GitHub Gist.
+ * Handles cases where the file might be missing or empty.
+ */
 const getSeenWords = async () => {
     try {
-        const response = await axios.get(`https://api.github.com/gists/${GIST_ID}`, { headers: gistHeaders });
-        const content = response.data.files['used_vocab.json'].content;
-        return JSON.parse(content);
+        const response = await axios.get(`https://api.github.com/gists/${GIST_ID}`, { 
+            headers: gistHeaders,
+            params: { _t: Date.now() } // Cache busting
+        });
+        
+        const files = response.data.files;
+        const targetFile = files['used_words.json'];
+
+        if (targetFile && targetFile.content) {
+            try {
+                return JSON.parse(targetFile.content);
+            } catch (pErr) {
+                console.error("JSON Parse error in Gist content. Resetting to empty array.");
+                return [];
+            }
+        }
+        return [];
     } catch (err) {
-        console.error("Gist Fetch Error:", err.response ? err.response.data : err.message);
-        throw err;
+        console.error("Error fetching Gist:", err.response ? err.response.data : err.message);
+        return []; // Fallback to empty if Gist fetch fails
     }
 };
 
+/**
+ * Updates the GitHub Gist with the new list of seen terms.
+ */
 const updateGist = async (list) => {
     try {
         await axios.patch(`https://api.github.com/gists/${GIST_ID}`, {
-            files: { 'used_vocab.json': { content: JSON.stringify(list) } }
+            files: { 'used_words.json': { content: JSON.stringify(list) } }
         }, { headers: gistHeaders });
     } catch (err) {
-        console.error("Gist Update Error:", err.response ? err.response.data : err.message);
-        throw err;
+        console.error("Error updating Gist:", err.response ? err.response.data : err.message);
     }
 };
 
-// --- API ENDPOINT ---
-app.get('/', async (req, res) => {
+/**
+ * Health Check Route
+ * Returns 200 OK as requested.
+ */
+app.get('/', (req, res) => {
+    res.status(200).send("API is active. Use /get to fetch a unique vocabulary object.");
+});
+
+/**
+ * Main Data Route
+ * Fetches a unique word, manages state via Gist, and returns result.
+ */
+app.get('/get', async (req, res) => {
     try {
         if (vocabulary.length === 0) {
-            return res.status(500).json({ error: "Vocabulary list is empty." });
+            return res.status(500).json({ error: "Vocabulary data is missing or empty." });
         }
 
-        // 1. Fetch seen words from GitHub Gist
+        // 1. Get seen words from persistent state (Gist)
         let seenTerms = await getSeenWords();
 
-        // 2. Filter local vocabulary to find unique words
+        // 2. Filter out words already seen
         let available = vocabulary.filter(w => !seenTerms.includes(w.term));
 
-        // 3. Reset if all words have been used
+        // 3. If all words are used, reset the cycle
         if (available.length === 0) {
-            console.log("All words used. Resetting cycle...");
+            console.log("All words seen. Resetting cycle...");
             seenTerms = [];
             available = vocabulary;
         }
 
-        // 4. Pick a random word from available list
+        // 4. Randomly select one unique word
         const randomIndex = Math.floor(Math.random() * available.length);
         const selectedWord = available[randomIndex];
 
-        // 5. Update the Gist with the newly seen word
+        // 5. Update persistent state
         seenTerms.push(selectedWord.term);
         await updateGist(seenTerms);
 
-        // 6. Return response
-        res.json({
+        // 6. Respond with the word
+        res.status(200).json({
             success: true,
             remaining_unique: available.length - 1,
             data: selectedWord
         });
 
     } catch (err) {
+        console.error("Route Error:", err.message);
         res.status(500).json({ 
-            error: "Failed to manage state via GitHub Gist", 
-            message: err.message,
-            tip: "Check if GIST_ID and GITHUB_TOKEN are correct in Render Environment Variables."
+            error: "Internal Server Error", 
+            message: "Failed to process unique word request." 
         });
     }
 });
 
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server is running on port ${PORT}`);
+    console.log(`Main Endpoint: http://localhost:${PORT}/get`);
 });
